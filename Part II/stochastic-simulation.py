@@ -169,13 +169,46 @@ class Vehicle():
 
 class Cancela():
     
-    DEFAULT_INIT_QUEUE_QUANTITY = 0
+    DEFAULT_INIT_PRESENT_SERVICE_TIME = 0
     DEFAULT_INIT_REMAINING_SERVICE_TIME = 0
     
-    def __init__(self, queue_quantity = DEFAULT_INIT_QUEUE_QUANTITY, remaining_service_time = DEFAULT_INIT_REMAINING_SERVICE_TIME):
+    def __init__(self, present_service_time = DEFAULT_INIT_PRESENT_SERVICE_TIME, remaining_service_time = DEFAULT_INIT_REMAINING_SERVICE_TIME):
         self.queue = []
-        self.queue_quantity = queue_quantity
+        self.count = 0
+        self.present_service_time = present_service_time
         self.remaining_service_time = remaining_service_time
+        
+    def quantity(self):
+        return len(self.queue)
+
+    def newVehicle(self, vehicle):
+        self.count = self.count + 1
+        if(self.quantity() == 0):
+            self.present_service_time = vehicle.getTs()
+        self.queue.append(vehicle)
+        self.remaining_service_time = self.remaining_service_time + vehicle.getTs()
+
+    def calculate(self, time):
+        self.present_service_time = self.present_service_time - time
+        self.remaining_service_time = self.remaining_service_time - time
+        
+        if self.present_service_time <= 0:
+            if self.quantity() != 0:
+                self.queue.pop(0)
+            if self.quantity() == 0:
+                self.present_service_time = self.DEFAULT_INIT_PRESENT_SERVICE_TIME
+                self.remaining_service_time = self.DEFAULT_INIT_REMAINING_SERVICE_TIME
+            else:
+                self.present_service_time = self.queue[0].getTs() + self.present_service_time
+    
+    def getRemainingServiceTime(self):
+        if self.remaining_service_time < 0:
+            return 0
+        else:
+            return self.remaining_service_time
+        
+    def getCount(self):
+        return self.count
     
 class Simulator():
     
@@ -186,6 +219,8 @@ class Simulator():
     DEFAULT_SIMULATION_TIME = 3600
     # Quantidade padrão de cancelas
     DEFAULT_CANCELAS_QUANTITY = 3
+    # Multiplicador padrão do tempo de chegada
+    DEFAULT_TEC_MULTIPLIER = 0.5
     # A padrão para o cálculo dos tempos de serviço
     DEFAULT_TS_A = 15
     # B padrão para o cálculo dos tempos de serviço
@@ -196,8 +231,8 @@ class Simulator():
     DEFAULT_ROUND_DIGITS = 2
 
     # Inicialização do simulador
-    def __init__(self, random, max_time = DEFAULT_SIMULATION_TIME, quantity_cancelas = DEFAULT_CANCELAS_QUANTITY, a = DEFAULT_TS_A, b = DEFAULT_TS_B):
-        self.random_numbers = random
+    def __init__(self, random_numbers, max_time = DEFAULT_SIMULATION_TIME, quantity_cancelas = DEFAULT_CANCELAS_QUANTITY, a = DEFAULT_TS_A, b = DEFAULT_TS_B):
+        self.random_numbers = random_numbers
         self.max_time = max_time
         self.quantity_cancelas = quantity_cancelas
         self.a = a
@@ -224,8 +259,14 @@ class Simulator():
     
     # Converte valores de um array de números em uma string do número com duas casas decimais
     def twoDigits(self, values):
-        for i in range(self.getRows()):
+        for i in range(len(values)):
             values[i] = "{:.2f}".format(values[i])
+        return values
+    
+    # Converte valores de um array de números em uma string do número com duas casas decimais
+    def twoDigitsCancelas(self, values):
+        for i in range(len(values)):
+            values[i] = int(values[i]) + 1
         return values
     
     # Geração e visualização da tabela dos resultados do simulador
@@ -234,11 +275,193 @@ class Simulator():
         titles = ['Cliente', 'TEC', 'TS', 'Tempo do Relógio', 'Cancela', 'Tempo de Início', 'Tempo de Fim', 'Tempo na Fila', 'Tempo no Sistema', 'Tempo Livre']
         # Geração da tabela
         fig = go.Figure(data=[go.Table(header=dict(values=[titles[0], titles[1], titles[2], titles[3], titles[4], titles[5], titles[6], titles[7], titles[8], titles[9]]), 
-                        cells=dict(values=[self.getNumberArray(), self.twoDigits(self.array_tec), self.twoDigits(self.array_ts), self.twoDigits(self.cancelas),
-                        self.twoDigits(self.clock_time), self.twoDigits(self.start_time), self.twoDigits(self.end_time), self.twoDigits(self.queue_time),
-                        self.twoDigits(self.system_time), self.twoDigits(self.free_time)]))])
+                        cells=dict(values=[self.getNumberArray(), self.twoDigits(self.array_tec), self.twoDigits(self.array_ts), 
+                                           self.twoDigits(self.clock_time), self.twoDigitsCancelas(self.cancelas), self.twoDigits(self.start_time),
+                                           self.twoDigits(self.end_time), self.twoDigits(self.queue_time), self.twoDigits(self.system_time),
+                                           self.twoDigits(self.free_time)]))])
         fig.show()
+    
+    # Visualização dos tempos médios e probabilidade de cancela livre da simulação
+    def print(self):
+        STRING_SEGUNDOS = " segundos"
+        ###
+    
+    # Realiza a simulação
+    def simulate(self):
+        # Limpeza dos arrays/colunas da tabela
+        self.clearArrays()
+        # Cálculo dos tempos de chegada
+        self.calcTec()
+        
+        simulation_cancelas = self.newCancelas()
+        
+        # Cálculo iterativo de cada coluna da simulação
+        # Condição de parada da simulação
+        cond = True
+        # Índice atual dos arrays/linha da tabela de resultados
+        index = 0
+        # Início da simulação
+        while (cond):
+            vehicle = self.vehicle(index)
+            self.array_ts.append(vehicle.getTs())
+            
+            self.calcCancelas(simulation_cancelas, vehicle.getTec())
+            
+            index_cancela = self.nextCancela(simulation_cancelas)
+            self.cancelas.append(index_cancela)
+            
+            # Tempo de chegada no relógio
+            self.calcClock(index)
+            
+            # Tempo de início de serviço
+            self.calcStart(simulation_cancelas[index_cancela], index)
+            
+            simulation_cancelas[index_cancela].newVehicle(vehicle)
+            
+            # Tempo de final de serviço
+            self.calcEnd(index)
+            # Tempo na fila
+            self.calcQueue(index)
+            # Tempo no sistema
+            self.calcSystem(index)
+            # Tempo de cancela livre
+            self.calcFree(simulation_cancelas[index_cancela], index_cancela, index)
+            
+            # Verificação da condição de parada
+            if (self.end_time[index] > self.max_time):
+                cond = False
+                self.trimmer(index)
+            # Próximo índice/veículo
+            index += 1
+    
+    # Limpeza dos arrays/colunas da tabela
+    def clearArrays(self):
+        self.array_tec.clear()
+        self.array_ts.clear()
+        self.clock_time.clear()
+        self.cancelas.clear()
+        self.start_time.clear()
+        self.end_time.clear()
+        self.queue_time.clear()
+        self.system_time.clear()
+        self.free_time.clear()
+    
+    # Retorno de um número pseudo-aleatório da array de números pseudo-aleatórios da simulação
+    def randomNumber(self):
+        return random.choice(self.random_numbers)
 
+    # Retorna o número arrendodado para 2 casas decimais
+    def roundNumber(self, number):
+        if self.ROUND_NUMBER == True:
+            return round(number)
+        else:
+            return round(number, self.DEFAULT_ROUND_DIGITS)
+    
+    # Cálculo dos tempos de chegada no sistema
+    def calcTec(self):
+        count = 0
+        while (count < self.max_time):
+            random_number = self.randomNumber()
+
+            new_time = (-20) * math.log(float(random_number), math.e)
+            new_time = new_time * self.DEFAULT_TEC_MULTIPLIER
+                
+            self.array_tec.append(self.roundNumber(new_time))
+            count += new_time
+    
+    def newCancelas(self):
+        array_cancelas = []
+        for _ in range(self.quantity_cancelas):
+            new_cancela = Cancela()
+            array_cancelas.append(new_cancela)
+        return array_cancelas
+
+    # Cálculo dos tempos de serviço
+    def calcTs(self):
+        random_number = self.randomNumber()
+        
+        new_time = ((self.b - self.a) * float(random_number)) + self.a
+        new_time = self.roundNumber(new_time)
+
+        return new_time
+    
+    def vehicle(self, index):
+        new_vehicle = Vehicle(tec=self.array_tec[index], ts=self.calcTs())
+        return new_vehicle
+
+    def calcCancelas(self, simulation_cancelas, time):
+        for i in range(self.quantity_cancelas):
+            simulation_cancelas[i].calculate(time)
+    
+    def nextCancela(self, simulation_cancelas):
+        if self.quantity_cancelas == 1:
+            return 0
+        else:
+            index = 0
+            for i in range(1, len(simulation_cancelas)):
+                if simulation_cancelas[i].quantity() < simulation_cancelas[index].quantity():
+                    index = i
+            return index
+    
+    # Retorno da contagem dos tempos de chegada até o determinado índice
+    def countTimeToIndex(self, index):
+        if (index == 0):
+            return self.array_tec[index]
+        
+        count = 0
+        for i in range(index + self.DEFAULT_RANGE_OFFSET):
+            count += self.array_tec[i]
+        return count
+    
+     # Cálculo dos tempos de chegada no relógio
+    def calcClock(self, index):
+        count = self.countTimeToIndex(index)
+    
+        self.clock_time.append(self.roundNumber(count))
+    
+    # Cálculo dos tempos de início de serviço
+    def calcStart(self, cancela, index):
+        present_clock_time = self.clock_time[index]
+        remaining_time = cancela.getRemainingServiceTime()
+        
+        new_start_time = present_clock_time + remaining_time
+        
+        self.start_time.append(self.roundNumber(new_start_time))
+    
+    # Cálculo dos tempos de final de serviço
+    def calcEnd(self, index):
+        new_end_time = self.start_time[index] + self.array_ts[index]
+        self.end_time.append(self.roundNumber(new_end_time))
+    
+    # Cálculo dos tempos na fila
+    def calcQueue(self, index):
+        self.queue_time.append(self.roundNumber(self.start_time[index] - self.clock_time[index]))
+    
+    # Cálculo dos tempos no sistema
+    def calcSystem(self, index):
+        self.system_time.append(self.roundNumber(self.queue_time[index] + self.array_ts[index]))
+    
+    def lastIndexCancela(self, index_cancela):
+        last_index = 0
+        for i in range(len(self.cancelas)):
+            if self.cancelas[i] == index_cancela:
+                last_index = i
+        return last_index
+    
+    # Cálculo dos tempos de cancela livre
+    def calcFree(self, cancela, index_cancela, index):
+        if (cancela.getCount() == 1):
+            self.free_time.append(self.roundNumber(self.start_time[index]))
+        else:
+            last_index_cancela = self.lastIndexCancela(index_cancela)
+            self.free_time.append(self.roundNumber((-1) * (self.start_time[index] - self.end_time[last_index_cancela])))
+    
+    # Remove resultados da simulação caso tenham passado do tempo de simulação
+    def trimmer(self, index):
+        rows = self.getRows() - (index + self.DEFAULT_RANGE_OFFSET)
+        for _ in range(rows):
+            self.array_tec.pop()
+            
 # Simulação
 # Quantidade de sementes/simuladores
 SEEDS_QTD = 130
@@ -291,5 +514,5 @@ if SHOW_PROPERTIES_GENERATORS == True:
 
 values = generators[0].getValues()
 simulator = Simulator(values, SIMULATION_TIME)
-#simulator.simulate()
+simulator.simulate()
 simulator.table()
