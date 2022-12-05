@@ -121,7 +121,7 @@ class Generator():
     
     # Remoção dos n primeiros números gerados
     def removeNumbers(self, values):
-        for i in range(self.DEFAULT_OFFSET):
+        for _ in range(self.DEFAULT_OFFSET):
             values.pop(0)
         return values
     
@@ -146,15 +146,21 @@ class Generator():
     def getModulus(self):
         return self.modulus
 
+# Veículos do simulador
 class Vehicle():
     
+    # Variáveis padrão dos veículos
+    # Tempo de chegada padrão do veículo
     DEFAULT_VEHICLE_TEC = 1
+    # Tempo de serviço padrão do veículo
     DEFAULT_VEHICLE_TS = 1
     
+    # Inicialização do veículo
     def __init__(self, tec = DEFAULT_VEHICLE_TEC, ts = DEFAULT_VEHICLE_TS):
         self.tec = tec
         self.ts = ts
     
+    # Getters e Setters
     def getTec(self):
         return self.tec
     
@@ -167,20 +173,27 @@ class Vehicle():
     def setTs(self, new_ts):
         self.ts = new_ts
 
+# Cancelas do simulador
 class Cancela():
     
+    # Variáveis padrão das cancelas
+    # Tempo de serviço atual inicial
     DEFAULT_INIT_PRESENT_SERVICE_TIME = 0
+    # Tempo de serviço remanescente inicial
     DEFAULT_INIT_REMAINING_SERVICE_TIME = 0
     
+    # Inicialização da cancela
     def __init__(self, present_service_time = DEFAULT_INIT_PRESENT_SERVICE_TIME, remaining_service_time = DEFAULT_INIT_REMAINING_SERVICE_TIME):
         self.queue = []
         self.count = 0
         self.present_service_time = present_service_time
         self.remaining_service_time = remaining_service_time
-        
+    
+    # Quantidade de veículos da fila da cancela
     def quantity(self):
         return len(self.queue)
 
+    # Adição de um novo veículo na fila da cancela
     def newVehicle(self, vehicle):
         self.count = self.count + 1
         if(self.quantity() == 0):
@@ -188,6 +201,7 @@ class Cancela():
         self.queue.append(vehicle)
         self.remaining_service_time = self.remaining_service_time + vehicle.getTs()
 
+    # Cálculo da passagem de tempo do simulador para essa cancela
     def calculate(self, time):
         self.present_service_time = self.present_service_time - time
         self.remaining_service_time = self.remaining_service_time - time
@@ -201,15 +215,18 @@ class Cancela():
             else:
                 self.present_service_time = self.queue[0].getTs() + self.present_service_time
     
+    # Getter do tempo de serviço remanescente
     def getRemainingServiceTime(self):
         if self.remaining_service_time < 0:
             return 0
         else:
             return self.remaining_service_time
-        
+    
+    # Getter da contagem de veículo que passaram pela cancela desde o início
     def getCount(self):
         return self.count
-    
+
+# Simulador
 class Simulator():
     
     # Variáveis padrão do simulador
@@ -314,6 +331,7 @@ class Simulator():
         # Cálculo dos tempos de chegada
         self.calcTec()
         
+        # Criação das cancelas do simulador
         simulation_cancelas = self.newCancelas()
         
         # Cálculo iterativo de cada coluna da simulação
@@ -323,11 +341,14 @@ class Simulator():
         index = 0
         # Início da simulação
         while (cond):
+            # Criação do novo veículo
             vehicle = self.vehicle(index)
             self.array_ts.append(vehicle.getTs())
             
+            # Cálculo da passagem de tempo nas cancelas
             self.calcCancelas(simulation_cancelas, vehicle.getTec())
             
+            # Busca pela próxima cancela que receberá o veículo
             index_cancela = self.nextCancela(simulation_cancelas)
             self.cancelas.append(index_cancela)
             
@@ -337,6 +358,7 @@ class Simulator():
             # Tempo de início de serviço
             self.calcStart(simulation_cancelas[index_cancela], index)
             
+            # Adição do veículo na fila da cancela
             simulation_cancelas[index_cancela].newVehicle(vehicle)
             
             # Tempo de final de serviço
@@ -390,6 +412,7 @@ class Simulator():
             self.array_tec.append(self.roundNumber(new_time))
             count += new_time
     
+    # Criação das cancelas do simulador
     def newCancelas(self):
         array_cancelas = []
         for _ in range(self.quantity_cancelas):
@@ -406,14 +429,17 @@ class Simulator():
 
         return new_time
     
+    # Criacação de um novo veículo
     def vehicle(self, index):
         new_vehicle = Vehicle(tec=self.array_tec[index], ts=self.calcTs())
         return new_vehicle
 
+    # Cálculo da passagem de tempo nas cancelas
     def calcCancelas(self, simulation_cancelas, time):
         for i in range(self.quantity_cancelas):
             simulation_cancelas[i].calculate(time)
     
+    # Busca pela cancela que receberá o novo veículo
     def nextCancela(self, simulation_cancelas):
         if self.quantity_cancelas == 1:
             return 0
@@ -462,6 +488,7 @@ class Simulator():
     def calcSystem(self, index):
         self.system_time.append(self.roundNumber(self.queue_time[index] + self.array_ts[index]))
     
+    # Busca pela última ocorrência da cancela na tabela da simulação
     def lastIndexCancela(self, index_cancela):
         last_index = 0
         for i in range(len(self.cancelas) - 1):
