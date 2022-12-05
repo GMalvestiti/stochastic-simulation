@@ -281,10 +281,31 @@ class Simulator():
                                            self.twoDigits(self.free_time)]))])
         fig.show()
     
-    # Visualização dos tempos médios e probabilidade de cancela livre da simulação
-    def print(self):
-        STRING_SEGUNDOS = " segundos"
-        ###
+    # Retorno do tempo médio de chegada no sistema
+    def meanTec(self):
+        media_tec = 0
+        for i in range(self.getRows()):
+            media_tec += self.array_tec[i]
+        return media_tec / self.getRows()
+
+    # Retorno do tempo médio de espera na fila
+    def meanQueue(self):
+        return np.mean(self.queue_time)
+    
+    # Retorno do tempo médio de serviço
+    def meanService(self):
+        return np.mean(self.array_ts)
+    
+    # Retorno do tempo médio despendido no sistema
+    def meanSystem(self):
+        return np.mean(self.system_time)
+    
+    # Retorno da probabilidade de cancela livre
+    def probFree(self):
+        probabilidade_free = 0
+        for i in range(self.getRows()):
+            probabilidade_free += self.free_time[i]
+        return probabilidade_free / self.max_time
     
     # Realiza a simulação
     def simulate(self):
@@ -443,7 +464,7 @@ class Simulator():
     
     def lastIndexCancela(self, index_cancela):
         last_index = 0
-        for i in range(len(self.cancelas)):
+        for i in range(len(self.cancelas) - 1):
             if self.cancelas[i] == index_cancela:
                 last_index = i
         return last_index
@@ -454,7 +475,12 @@ class Simulator():
             self.free_time.append(self.roundNumber(self.start_time[index]))
         else:
             last_index_cancela = self.lastIndexCancela(index_cancela)
-            self.free_time.append(self.roundNumber((-1) * (self.start_time[index] - self.end_time[last_index_cancela])))
+            new_time = self.start_time[index] - self.end_time[last_index_cancela]
+
+            if new_time < 0:
+                new_time = 0
+
+            self.free_time.append(self.roundNumber(new_time))
     
     # Remove resultados da simulação caso tenham passado do tempo de simulação
     def trimmer(self, index):
@@ -512,7 +538,64 @@ if SHOW_PROPERTIES_GENERATORS == True:
             + "\n Desvio padrão = " + str(statistic_properties[1]/SEEDS_QTD) + "\n Covariância = " + str(statistic_properties[2]/SEEDS_QTD)
             + "\n Qui-Quadrado = " + str(statistic_properties[3]/SEEDS_QTD))
 
-values = generators[0].getValues()
-simulator = Simulator(values, SIMULATION_TIME)
-simulator.simulate()
-simulator.table()
+# Criação dos n simuladores e realização de cada simulação
+simulators = []
+for i in range(SEEDS_QTD):
+    values = generators[i].getValues()
+    
+    simulator = Simulator(values, SIMULATION_TIME)
+    simulator.simulate()
+    simulators.append(simulator)
+
+# Criação dos arrays das médias dos tempos na fila, tempos no sistema e tempos de serviço de cada simulação
+medias_fila = []
+medias_sistema = []
+medias_servico = []
+medias_tec = []
+for i in range(SEEDS_QTD):
+    medias_fila.append(simulators[i].meanQueue())
+    medias_sistema.append(simulators[i].meanSystem())
+    medias_servico.append(simulators[i].meanService())
+    medias_tec.append(simulators[i].meanTec())
+
+# Cálculo das média das médias dos tempos na fila, tempos no sistema e tempos de serviço de cada simulação
+media_das_medias_fila = np.mean(medias_fila)
+media_das_medias_sistema = np.mean(medias_sistema)
+media_das_medias_servico = np.mean(medias_servico)
+media_das_medias_tec = np.mean(medias_tec)
+
+# Desvios padrões das médias de dos tempos na fila, tempos no sistema e tempos de serviço de cada simulação
+desvio_padrao_fila = np.std(medias_fila)
+desvio_padrao_sistema = np.std(medias_sistema)
+desvio_padrao_servico = np.std(medias_servico)
+desvio_padrao_tec = np.std(medias_tec)
+
+# Exibição da tabela de resultados da N-ésima simulação
+if SHOW_TABLE == True:
+    N = 0
+    simulators[N].table()
+
+# Cálculo dos intervalos de confiança
+T_STUDENT = 1.96
+intervalos_confianca = []
+intervalos_confianca.append(media_das_medias_fila + (T_STUDENT * (desvio_padrao_fila / math.sqrt(SEEDS_QTD))))
+intervalos_confianca.append(media_das_medias_fila - (T_STUDENT * (desvio_padrao_fila / math.sqrt(SEEDS_QTD))))
+intervalos_confianca.append(media_das_medias_sistema + (T_STUDENT * (desvio_padrao_sistema / math.sqrt(SEEDS_QTD))))
+intervalos_confianca.append(media_das_medias_sistema - (T_STUDENT * (desvio_padrao_sistema / math.sqrt(SEEDS_QTD))))
+intervalos_confianca.append(media_das_medias_servico + (T_STUDENT * (desvio_padrao_servico / math.sqrt(SEEDS_QTD))))
+intervalos_confianca.append(media_das_medias_servico - (T_STUDENT * (desvio_padrao_servico / math.sqrt(SEEDS_QTD))))
+
+for i in range(len(intervalos_confianca)):
+    intervalos_confianca[i] = round(intervalos_confianca[i], 2)
+    intervalos_confianca[i] = "{:.2f}".format(intervalos_confianca[i])
+
+# Exibição dos resultados
+print("\n Quantidade de simuladores e sementes = " + str(SEEDS_QTD) + "\n Tempo de simulação = " + str(SIMULATION_TIME) + " segundos" +
+      "\n Média dos tempos de chegada = " + str(media_das_medias_tec) + " segundos" + "\n" +
+      "\n Intervalo de confiança do tempo de espera na fila:" +
+      "\n + = " + str(intervalos_confianca[0]) + " segundos" + "\n - = " + str(intervalos_confianca[1]) + " segundos" + "\n" +
+      "\n Intervalo de confiança do tempo despendido no sistema:" +
+      "\n + = " + str(intervalos_confianca[2]) + " segundos" + "\n - = " + str(intervalos_confianca[3]) + " segundos" + "\n" +
+      "\n Intervalo de confiança do tempo de serviço:" +
+      "\n + = " + str(intervalos_confianca[4]) + " segundos" + "\n - = " + str(intervalos_confianca[5]) + " segundos" + "\n" +
+      "\n Tempo de execução: " + str(time.time() - start_time) + " segundos" + "\n")
